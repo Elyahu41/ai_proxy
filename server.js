@@ -6,8 +6,10 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
+const APP_SECRET = process.env.APP_SECRET || null;
+
 app.use((req, res, next) => {
-  if (req.headers.authorization !== `Bearer my-app-secret`) {
+  if (APP_SECRET && req.headers.authorization !== `Bearer ${APP_SECRET}`) {
     return res.status(403).json({ error: "Unauthorized" });
   }
   next();
@@ -119,4 +121,5 @@ app.post("/ask", async (req, res) => {
 // Render uses PORT env variable automatically
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ AI proxy running on port ${PORT}`));
+
 
