@@ -13,6 +13,11 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get("/", (req, res) => {
+  res.json({ status: "awake", message: "AI Proxy Server is running ✅" });
+});
+
+
 app.post("/ask", async (req, res) => {
   try {
     const { provider = "openai", prompt, model, messages } = req.body;
@@ -114,3 +119,4 @@ app.post("/ask", async (req, res) => {
 // Render uses PORT env variable automatically
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ AI proxy running on port ${PORT}`));
+
