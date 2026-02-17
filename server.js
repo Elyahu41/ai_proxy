@@ -29,6 +29,7 @@ app.post("/ask", async (req, res) => {
 
     console.log("Recieved Prompt from user:")
     console.log(prompt);
+    console.log("--------------------------------------------------");
     
     let responseText = "";
 
@@ -116,6 +117,7 @@ app.post("/ask", async (req, res) => {
 
     console.log("responded with this text:");
     console.log(responseText);
+    console.log("--------------------------------------------------");
 
     res.json({ answer: responseText });
   } catch (err) {
