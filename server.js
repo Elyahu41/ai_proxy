@@ -27,6 +27,9 @@ app.post("/ask", async (req, res) => {
     if (!prompt && !messages)
       return res.status(400).json({ error: "Missing prompt or messages" });
 
+    console.log("Recieved Prompt from user:")
+    console.log(prompt);
+    
     let responseText = "";
 
     switch (provider.toLowerCase()) {
@@ -111,6 +114,9 @@ app.post("/ask", async (req, res) => {
         return res.status(400).json({ error: `Unsupported provider: ${provider}` });
     }
 
+    console.log("responded with this text:");
+    console.log(responseText);
+
     res.json({ answer: responseText });
   } catch (err) {
     console.error("Error:", err);
@@ -121,5 +127,6 @@ app.post("/ask", async (req, res) => {
 // Render uses PORT env variable automatically
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ AI proxy running on port ${PORT}`));
+
 
 
