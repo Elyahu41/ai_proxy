@@ -27,7 +27,7 @@ app.post("/ask", async (req, res) => {
     if (!prompt && !messages)
       return res.status(400).json({ error: "Missing prompt or messages" });
 
-    console.log("Recieved Prompt from user:")
+    console.log("Received Prompt from user:")
     console.log("Provider:", provider);
     console.log(prompt);
     console.log("--------------------------------------------------");
