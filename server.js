@@ -127,6 +127,104 @@ app.post("/ask", async (req, res) => {
   }
 });
 
+app.post("/analyze-image", async (req, res) => {
+  try {
+    const {
+      provider = "gemini",
+      model,
+      imageBase64,
+      mimeType = "image/jpeg",
+      prompt = "Analyze this food image. Return ONLY a JSON object with: food_name, total_calories (integer), serving_size, confidence (high/medium/low), macros: {protein_g, carbs_g, fat_g}, food_items (array), notes."
+    } = req.body;
+
+    if (!imageBase64)
+      return res.status(400).json({ error: "Missing imageBase64" });
+
+    console.log("Image analysis request — Provider:", provider);
+
+    let responseText = "";
+
+    switch (provider.toLowerCase()) {
+
+      case "gemini": {
+        const result = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-1.5-flash"}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [
+                { text: prompt },
+                { inline_data: { mime_type: mimeType, data: imageBase64 } }
+              ]}],
+              generationConfig: { temperature: 0.1, maxOutputTokens: 512 }
+            }),
+          }
+        );
+        const data = await result.json();
+        responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data);
+        break;
+      }
+
+      case "openai": {
+        const result = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: model || "gpt-4o-mini",
+            max_tokens: 512,
+            messages: [{ role: "user", content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } }
+            ]}],
+          }),
+        });
+        const data = await result.json();
+        responseText = data.choices?.[0]?.message?.content || JSON.stringify(data);
+        break;
+      }
+
+      case "claude": {
+        const result = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": process.env.CLAUDE_API_KEY,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: model || "claude-3-haiku-20240307",
+            max_tokens: 512,
+            messages: [{ role: "user", content: [
+              { type: "image", source: { type: "base64", media_type: mimeType, data: imageBase64 } },
+              { type: "text", text: prompt }
+            ]}],
+          }),
+        });
+        const data = await result.json();
+        responseText = data.content?.[0]?.text || JSON.stringify(data);
+        break;
+      }
+
+      default:
+        return res.status(400).json({ error: `Unsupported provider: ${provider}. Use gemini, openai, or claude.` });
+    }
+
+    console.log("Image analysis response:");
+    console.log(responseText);
+    console.log("--------------------------------------------------");
+
+    res.json({ answer: responseText });
+
+  } catch (err) {
+    console.error("Error:", err);
+    res.status(500).json({ error: "Server error", details: err.message });
+  }
+});
+
 // Render uses PORT env variable automatically
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ AI proxy running on port ${PORT}`));
