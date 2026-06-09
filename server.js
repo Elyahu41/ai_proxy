@@ -128,6 +128,8 @@ app.post("/ask", async (req, res) => {
 });
 
 app.post("/analyze-image", async (req, res) => {
+  console.log("Received Prompt from user:")
+  console.log("--------------------------------------------------");
   try {
     const {
       provider = "gemini",
@@ -136,9 +138,14 @@ app.post("/analyze-image", async (req, res) => {
       mimeType = "image/jpeg",
       prompt = "Analyze this food image. Return ONLY a JSON object with: food_name, total_calories (integer), serving_size, confidence (high/medium/low), macros: {protein_g, carbs_g, fat_g}, food_items (array), notes."
     } = req.body;
+    console.log("Provider:", provider);
+    console.log("Model:", model);
+    console.log("ImageBase64:", imageBase64);
+    console.log("--------------------------------------------------");
 
-    if (!imageBase64)
+    if (!imageBase64) {
       return res.status(400).json({ error: "Missing imageBase64" });
+    }
 
     console.log("Image analysis request — Provider:", provider);
 
@@ -148,7 +155,7 @@ app.post("/analyze-image", async (req, res) => {
 
       case "gemini": {
         const result = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-1.5-flash"}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-3.1-flash"}:generateContent?key=${process.env.GEMINI_API_KEY}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
