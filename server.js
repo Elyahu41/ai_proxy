@@ -129,7 +129,7 @@ app.post("/ask", async (req, res) => {
 });
 
 app.post("/analyze-image", async (req, res) => {
-  console.log("Received Prompt from user:")
+  console.log("Received Prompt from user for image analysis");
   console.log("--------------------------------------------------");
   try {
     const {
@@ -137,7 +137,32 @@ app.post("/analyze-image", async (req, res) => {
       model,
       imageBase64,
       mimeType = "image/jpeg",
-      prompt = "Analyze this food image. Return ONLY a JSON object with: food_name, total_calories (integer), serving_size, confidence (high/medium/low), macros: {protein_g, carbs_g, fat_g}, food_items (array), notes."
+      prompt =
+      `You are a professional nutritionist AI. Carefully analyze this food image.
+
+Return ONLY a valid JSON object — no markdown fences, no explanation, nothing else.
+Use this exact structure:
+
+{
+  "food_name": "Cheeseburger with fries",
+  "total_calories": 850,
+  "serving_size": "1 burger + medium fries (~450g)",
+  "confidence": "high",
+  "macros": {
+    "protein_g": 32,
+    "carbs_g": 95,
+    "fat_g": 38
+  },
+  "food_items": ["cheeseburger", "french fries"],
+  "notes": "Standard fast-food portion estimate"
+}
+
+Rules:
+- confidence must be one of: "high", "medium", "low"
+- All numeric values must be plain integers (no decimals)
+- If no food is visible or identifiable, set total_calories to -1
+- food_items should list each distinct food item visible
+- Return ONLY the JSON object, nothing else`
     } = req.body;
     console.log("Provider:", provider);
     console.log("Model:", model);
