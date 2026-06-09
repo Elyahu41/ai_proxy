@@ -10,6 +10,7 @@ const APP_SECRET = process.env.APP_SECRET || null;
 
 app.use((req, res, next) => {
   if (APP_SECRET && req.headers.authorization !== `Bearer ${APP_SECRET}`) {
+    console.warn("Unauthorized request blocked:", req.method, req.path);
     return res.status(403).json({ error: "Unauthorized" });
   }
   next();
@@ -140,7 +141,6 @@ app.post("/analyze-image", async (req, res) => {
     } = req.body;
     console.log("Provider:", provider);
     console.log("Model:", model);
-    console.log("ImageBase64:", imageBase64);
     console.log("--------------------------------------------------");
 
     if (!imageBase64) {
@@ -155,7 +155,7 @@ app.post("/analyze-image", async (req, res) => {
 
       case "gemini": {
         const result = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-3.1-flash"}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-3.5-flash"}:generateContent?key=${process.env.GEMINI_API_KEY}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
