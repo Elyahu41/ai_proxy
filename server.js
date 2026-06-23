@@ -8,6 +8,10 @@ app.use(express.json({ limit: '10mb' }));
 
 const APP_SECRET = process.env.APP_SECRET || null;
 
+app.get("/", (req, res) => {
+  res.json({ status: "awake", message: "AI Proxy Server is running ✅" });
+});
+
 app.use((req, res, next) => {
   if (APP_SECRET && req.headers.authorization !== `Bearer ${APP_SECRET}`) {
     console.warn("Unauthorized request blocked:", req.method, req.path);
@@ -15,11 +19,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-app.get("/", (req, res) => {
-  res.json({ status: "awake", message: "AI Proxy Server is running ✅" });
-});
-
 
 app.post("/ask", async (req, res) => {
   try {
@@ -137,32 +136,7 @@ app.post("/analyze-image", async (req, res) => {
       model,
       imageBase64,
       mimeType = "image/jpeg",
-      prompt =
-      `You are a professional nutritionist AI. Carefully analyze this food image.
-
-Return ONLY a valid JSON object — no markdown fences, no explanation, nothing else.
-Use this exact structure:
-
-{
-  "food_name": "Cheeseburger with fries",
-  "total_calories": 850,
-  "serving_size": "1 burger + medium fries (~450g)",
-  "confidence": "high",
-  "macros": {
-    "protein_g": 32,
-    "carbs_g": 95,
-    "fat_g": 38
-  },
-  "food_items": ["cheeseburger", "french fries"],
-  "notes": "Standard fast-food portion estimate"
-}
-
-Rules:
-- confidence must be one of: "high", "medium", "low"
-- All numeric values must be plain integers (no decimals)
-- If no food is visible or identifiable, set total_calories to -1
-- food_items should list each distinct food item visible
-- Return ONLY the JSON object, nothing else`
+      prompt = "Please analyze the image and provide a detailed description of its content."
     } = req.body;
     console.log("Provider:", provider);
     console.log("Model:", model);
