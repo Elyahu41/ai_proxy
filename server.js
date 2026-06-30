@@ -31,7 +31,7 @@ app.post("/ask", async (req, res) => {
     console.log("Provider:", provider);
     console.log(prompt);
     console.log("--------------------------------------------------");
-    
+
     let responseText = "";
 
     switch (provider.toLowerCase()) {
@@ -159,11 +159,17 @@ app.post("/analyze-image", async (req, res) => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [{ parts: [
-                { text: prompt },
-                { inline_data: { mime_type: mimeType, data: imageBase64 } }
-              ]}],
-              generationConfig: { temperature: 0.1, maxOutputTokens: 512 }
+              contents: [{
+                parts: [
+                  { text: prompt },
+                  { inline_data: { mime_type: mimeType, data: imageBase64 } }
+                ]
+              }],
+              generationConfig: {
+                temperature: 0.1,
+                maxOutputTokens: 1024,
+                thinkingConfig: { thinkingBudget: 0 }
+              }
             }),
           }
         );
@@ -182,10 +188,12 @@ app.post("/analyze-image", async (req, res) => {
           body: JSON.stringify({
             model: model || "gpt-4o-mini",
             max_tokens: 512,
-            messages: [{ role: "user", content: [
-              { type: "text", text: prompt },
-              { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } }
-            ]}],
+            messages: [{
+              role: "user", content: [
+                { type: "text", text: prompt },
+                { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } }
+              ]
+            }],
           }),
         });
         const data = await result.json();
@@ -204,10 +212,12 @@ app.post("/analyze-image", async (req, res) => {
           body: JSON.stringify({
             model: model || "claude-3-haiku-20240307",
             max_tokens: 512,
-            messages: [{ role: "user", content: [
-              { type: "image", source: { type: "base64", media_type: mimeType, data: imageBase64 } },
-              { type: "text", text: prompt }
-            ]}],
+            messages: [{
+              role: "user", content: [
+                { type: "image", source: { type: "base64", media_type: mimeType, data: imageBase64 } },
+                { type: "text", text: prompt }
+              ]
+            }],
           }),
         });
         const data = await result.json();
