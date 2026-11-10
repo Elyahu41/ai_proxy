@@ -8,6 +8,41 @@ app.use(express.json({ limit: '10mb' }));
 
 const APP_SECRET = process.env.APP_SECRET || null;
 
+// ---- Response helpers -------------------------------------------------------
+// Newer models can return thinking/reasoning blocks before the answer, so never assume
+// the answer is the first block. If no text comes back, report an error instead of
+// sending the raw JSON as the "answer" (apps would try to parse numbers out of it).
+class UpstreamError extends Error {
+  constructor(provider, status, data) {
+    super(`${provider} returned no text (HTTP ${status}): ${data?.error?.message || JSON.stringify(data).slice(0, 300)}`);
+    this.status = 502;
+  }
+}
+
+function openAIText(data) {
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map(p => p?.text || "").join("");
+  return "";
+}
+
+function geminiText(data) {
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  return parts.filter(p => !p.thought && typeof p.text === "string").map(p => p.text).join("");
+}
+
+function claudeText(data) {
+  const blocks = Array.isArray(data?.content) ? data.content : [];
+  return blocks.filter(b => b.type === "text").map(b => b.text).join("");
+}
+
+async function readText(provider, result, extract) {
+  const data = await result.json();
+  const text = (extract(data) || "").trim();
+  if (!result.ok || !text) throw new UpstreamError(provider, result.status, data);
+  return text;
+}
+
 app.get("/", (req, res) => {
   res.json({ status: "awake", message: "AI Proxy Server is running ✅" });
 });
@@ -44,20 +79,19 @@ app.post("/ask", async (req, res) => {
             "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
           },
           body: JSON.stringify({
-            model: model || "gpt-4o-mini",
+            model: model || "gpt-5.4-mini",
             messages: messages || [{ role: "user", content: prompt }],
           }),
         });
 
-        const data = await result.json();
-        responseText = data.choices?.[0]?.message?.content || JSON.stringify(data);
+        responseText = await readText("openai", result, openAIText);
         break;
       }
 
       // GOOGLE GEMINI
       case "gemini": {
         const result = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-2.0-flash"}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-3.5-flash-lite"}:generateContent?key=${process.env.GEMINI_API_KEY}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -67,8 +101,7 @@ app.post("/ask", async (req, res) => {
           }
         );
 
-        const data = await result.json();
-        responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data);
+        responseText = await readText("gemini", result, geminiText);
         break;
       }
 
@@ -82,14 +115,14 @@ app.post("/ask", async (req, res) => {
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify({
-            model: model || "claude-3-haiku-20240307",
-            max_tokens: 1024,
-            messages: [{ role: "user", content: prompt }],
+            model: model || "claude-haiku-5-5",
+            // Current Claude models think before answering; leave room for that plus the answer
+            max_tokens: 8000,
+            messages: messages || [{ role: "user", content: prompt }],
           }),
         });
 
-        const data = await result.json();
-        responseText = data.content?.[0]?.text || JSON.stringify(data);
+        responseText = await readText("claude", result, claudeText);
         break;
       }
 
@@ -107,8 +140,7 @@ app.post("/ask", async (req, res) => {
           }),
         });
 
-        const data = await result.json();
-        responseText = data.choices?.[0]?.message?.content || JSON.stringify(data);
+        responseText = await readText("mistral", result, openAIText);
         break;
       }
 
@@ -123,7 +155,7 @@ app.post("/ask", async (req, res) => {
     res.json({ answer: responseText });
   } catch (err) {
     console.error("Error:", err);
-    res.status(500).json({ error: "Server error", details: err.message });
+    res.status(err.status || 500).json({ error: err.status ? "Upstream error" : "Server error", details: err.message });
   }
 });
 
@@ -173,8 +205,7 @@ app.post("/analyze-image", async (req, res) => {
             }),
           }
         );
-        const data = await result.json();
-        responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(data);
+        responseText = await readText("gemini", result, geminiText);
         break;
       }
 
@@ -186,8 +217,8 @@ app.post("/analyze-image", async (req, res) => {
             "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
           },
           body: JSON.stringify({
-            model: model || "gpt-4o-mini",
-            max_tokens: 512,
+            model: model || "gpt-5.4-mini",
+            max_completion_tokens: 2048,
             messages: [{
               role: "user", content: [
                 { type: "text", text: prompt },
@@ -196,8 +227,7 @@ app.post("/analyze-image", async (req, res) => {
             }],
           }),
         });
-        const data = await result.json();
-        responseText = data.choices?.[0]?.message?.content || JSON.stringify(data);
+        responseText = await readText("openai", result, openAIText);
         break;
       }
 
@@ -210,8 +240,8 @@ app.post("/analyze-image", async (req, res) => {
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify({
-            model: model || "claude-3-haiku-20240307",
-            max_tokens: 512,
+            model: model || "claude-haiku-5-5",
+            max_tokens: 4000,
             messages: [{
               role: "user", content: [
                 { type: "image", source: { type: "base64", media_type: mimeType, data: imageBase64 } },
@@ -220,8 +250,7 @@ app.post("/analyze-image", async (req, res) => {
             }],
           }),
         });
-        const data = await result.json();
-        responseText = data.content?.[0]?.text || JSON.stringify(data);
+        responseText = await readText("claude", result, claudeText);
         break;
       }
 
@@ -237,13 +266,10 @@ app.post("/analyze-image", async (req, res) => {
 
   } catch (err) {
     console.error("Error:", err);
-    res.status(500).json({ error: "Server error", details: err.message });
+    res.status(err.status || 500).json({ error: err.status ? "Upstream error" : "Server error", details: err.message });
   }
 });
 
 // Render uses PORT env variable automatically
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ AI proxy running on port ${PORT}`));
-
-
-
