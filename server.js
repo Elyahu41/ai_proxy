@@ -1,6 +1,10 @@
 import express from "express";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
+import { initializeApp, cert } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+import { createChallenge, publicName } from "./challenge.js";
 
 dotenv.config();
 const app = express();
@@ -43,6 +47,84 @@ async function readText(provider, result, extract) {
   return text;
 }
 
+// ---- Model calls --------------------------------------------------------------
+async function askModel(provider = "openai", model, prompt, messages) {
+  switch (provider.toLowerCase()) {
+    // OPENAI / ChatGPT
+    case "openai": {
+      const result = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: model || "gpt-5.4-mini",
+          messages: messages || [{ role: "user", content: prompt }],
+        }),
+      });
+
+      return await readText("openai", result, openAIText);
+    }
+
+    // GOOGLE GEMINI
+    case "gemini": {
+      const result = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-3.5-flash-lite"}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+          }),
+        }
+      );
+
+      return await readText("gemini", result, geminiText);
+    }
+
+    // ANTHROPIC CLAUDE
+    case "claude": {
+      const result = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.CLAUDE_API_KEY,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: model || "claude-haiku-5-5",
+          // Current Claude models think before answering; leave room for that plus the answer
+          max_tokens: 8000,
+          messages: messages || [{ role: "user", content: prompt }],
+        }),
+      });
+
+      return await readText("claude", result, claudeText);
+    }
+
+    // MISTRAL AI
+    case "mistral": {
+      const result = await fetch("https://api.mistral.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.MISTRAL_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: model || "mistral-small-latest",
+          messages: messages || [{ role: "user", content: prompt }],
+        }),
+      });
+
+      return await readText("mistral", result, openAIText);
+    }
+
+    default:
+      throw Object.assign(new Error(`Unsupported provider: ${provider}`), { status: 400 });
+  }
+}
+
 app.get("/", (req, res) => {
   res.json({ status: "awake", message: "AI Proxy Server is running ✅" });
 });
@@ -67,86 +149,7 @@ app.post("/ask", async (req, res) => {
     console.log(prompt);
     console.log("--------------------------------------------------");
 
-    let responseText = "";
-
-    switch (provider.toLowerCase()) {
-      // OPENAI / ChatGPT
-      case "openai": {
-        const result = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: model || "gpt-5.4-mini",
-            messages: messages || [{ role: "user", content: prompt }],
-          }),
-        });
-
-        responseText = await readText("openai", result, openAIText);
-        break;
-      }
-
-      // GOOGLE GEMINI
-      case "gemini": {
-        const result = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-3.5-flash-lite"}:generateContent?key=${process.env.GEMINI_API_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-            }),
-          }
-        );
-
-        responseText = await readText("gemini", result, geminiText);
-        break;
-      }
-
-      // ANTHROPIC CLAUDE
-      case "claude": {
-        const result = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": process.env.CLAUDE_API_KEY,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: model || "claude-haiku-5-5",
-            // Current Claude models think before answering; leave room for that plus the answer
-            max_tokens: 8000,
-            messages: messages || [{ role: "user", content: prompt }],
-          }),
-        });
-
-        responseText = await readText("claude", result, claudeText);
-        break;
-      }
-
-      // MISTRAL AI
-      case "mistral": {
-        const result = await fetch("https://api.mistral.ai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.MISTRAL_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: model || "mistral-small-latest",
-            messages: messages || [{ role: "user", content: prompt }],
-          }),
-        });
-
-        responseText = await readText("mistral", result, openAIText);
-        break;
-      }
-
-      default:
-        return res.status(400).json({ error: `Unsupported provider: ${provider}` });
-    }
+    const responseText = await askModel(provider, model, prompt, messages);
 
     console.log("responded with this text:");
     console.log(responseText);
@@ -267,6 +270,71 @@ app.post("/analyze-image", async (req, res) => {
   } catch (err) {
     console.error("Error:", err);
     res.status(err.status || 500).json({ error: err.status ? "Upstream error" : "Server error", details: err.message });
+  }
+});
+
+
+// ---- "Beat the AI" daily challenge ---------------------------------------------
+// Needs FIREBASE_SERVICE_ACCOUNT (the service-account JSON from Firebase console, as one line)
+let challenge = null;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+    challenge = createChallenge({
+      db: getFirestore(),
+      FieldValue,
+      askModel: (provider, model, prompt) => askModel(provider, model, prompt),
+      fetchCoins: async () => {
+        const r = await fetch("https://cryptorates.ai/v1/coins/100");
+        if (!r.ok) throw new Error(`price API HTTP ${r.status}`);
+        return r.json();
+      },
+    });
+    console.log("Challenge enabled");
+  } catch (e) {
+    console.error("Challenge disabled, bad FIREBASE_SERVICE_ACCOUNT:", e.message);
+  }
+} else {
+  console.warn("Challenge disabled: FIREBASE_SERVICE_ACCOUNT is not set");
+}
+
+// Creates today's round, locks yesterday's and scores the one before. Safe to call often.
+app.post("/challenge/sync", async (req, res) => {
+  if (!challenge) return res.status(503).json({ error: "challenge_disabled" });
+  try {
+    res.json({ ok: true, ...(await challenge.sync()) });
+  } catch (err) {
+    console.error("challenge sync failed:", err);
+    res.status(500).json({ error: "sync_failed", details: err.message });
+  }
+});
+
+// Body: { roundId: "2026-11-10", picks: { BTC: "up", ETH: "down", ... } }
+// Header: X-Firebase-Token: <Firebase ID token>
+app.post("/challenge/picks", async (req, res) => {
+  if (!challenge) return res.status(503).json({ error: "challenge_disabled" });
+  let decoded;
+  try {
+    decoded = await getAuth().verifyIdToken(String(req.headers["x-firebase-token"] || ""));
+  } catch {
+    return res.status(401).json({ error: "not_signed_in" });
+  }
+  if (decoded.firebase?.sign_in_provider === "anonymous") {
+    return res.status(401).json({ error: "not_signed_in" });
+  }
+  try {
+    await challenge.sync(); // make sure today's round exists
+    const result = await challenge.submitPicks({
+      uid: decoded.uid,
+      displayName: publicName(decoded.name, decoded.uid),
+      roundId: req.body?.roundId,
+      picks: req.body?.picks,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.code || err.message });
+    console.error("challenge picks failed:", err);
+    res.status(500).json({ error: "server_error" });
   }
 });
 
